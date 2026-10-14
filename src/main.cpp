@@ -2251,11 +2251,15 @@ static bool handleSettingsTap(int x, int y) {
 static void clickButton(const std::string& label) {
     app.uiStatus.clear();
     if (label == "New") {
-        app.confirmNew = true;
-        app.settingsPage = 0;
-        app.showSettings = false;
-        app.showGameOver = false;
-        app.overlayButtons.clear();
+        if (!app.game.gameOverMessage().empty()) {
+            startNewGameNow();
+        } else {
+            app.confirmNew = true;
+            app.settingsPage = 0;
+            app.showSettings = false;
+            app.showGameOver = false;
+            app.overlayButtons.clear();
+        }
     } else if (label == "Undo") {
         if (app.reviewMode) { app.uiStatus = "Exit review mode before undo."; gtk_widget_queue_draw(app.area); return; }
         app.resigned = false;
