@@ -2169,7 +2169,11 @@ static bool handleReviewTap(int x, int y) {
         int total = (int)app.game.uciMoves().size();
         if (b.label == "Prev") app.reviewPly = clampInt(app.reviewPly - 1, 0, total);
         else if (b.label == "Next") app.reviewPly = clampInt(app.reviewPly + 1, 0, total);
-        else if (b.label == "Exit Review") { app.reviewMode = false; app.reviewPly = 0; }
+        else if (b.label == "Exit Review") {
+            app.reviewMode = false;
+            app.reviewPly = 0;
+            maybeEngineMove();
+        }
         gtk_widget_queue_draw(app.area);
         return true;
     }
@@ -2197,16 +2201,17 @@ static bool handleSettingsTap(int x, int y) {
 
         if (app.settingsPage == 1) {
             if (b.label == "Back") app.settingsPage = 0;
-            else if (b.label == "Close Settings") { app.showSettings = false; app.settingsPage = 0; }
+            else if (b.label == "Close Settings") {
+                app.showSettings = false;
+                app.settingsPage = 0;
+                maybeEngineMove();
+            }
             else if (b.label.rfind("Save ", 0) == 0) {
                 int n = std::atoi(b.label.substr(5).c_str());
                 if (n >= 1 && n <= 5) saveSlot(n);
             } else if (b.label.rfind("Load ", 0) == 0) {
                 int n = std::atoi(b.label.substr(5).c_str());
-                if (n >= 1 && n <= 5) {
-                    loadSlot(n);
-                    maybeEngineMove();
-                }
+                if (n >= 1 && n <= 5) loadSlot(n);
             } else if (b.label.rfind("Del ", 0) == 0) {
                 int n = std::atoi(b.label.substr(4).c_str());
                 if (n >= 1 && n <= 5) deleteSlot(n);
@@ -2225,13 +2230,13 @@ static bool handleSettingsTap(int x, int y) {
             if (app.engineMode == EngineMode::Off) app.engineMode = EngineMode::Black;
             else if (app.engineMode == EngineMode::Black) app.engineMode = EngineMode::White;
             else app.engineMode = EngineMode::Off;
-            maybeEngineMove();
         } else if (b.label == "-250") {
             app.engineEloIndex = clampInt(app.engineEloIndex - 1, 0, (int)app.engineElos.size() - 1);
         } else if (b.label == "+250") {
             app.engineEloIndex = clampInt(app.engineEloIndex + 1, 0, (int)app.engineElos.size() - 1);
         } else if (b.label == "Hint") {
             app.showSettings = false;
+            maybeEngineMove();
             requestHint();
         } else if (b.label == "Restart Engine") {
             app.engine.stop();
@@ -2258,7 +2263,11 @@ static bool handleSettingsTap(int x, int y) {
             freePieceImages();
             loadPieceImages();
             app.uiStatus = haveAllPieceImages() ? "Piece PNGs loaded." : "Some piece PNGs are missing; using fallback letters.";
-        } else if (b.label == "Close Settings") { app.showSettings = false; app.settingsPage = 0; }
+        } else if (b.label == "Close Settings") {
+            app.showSettings = false;
+            app.settingsPage = 0;
+            maybeEngineMove();
+        }
         saveAppSettings();
         gtk_widget_queue_draw(app.area);
         return true;
