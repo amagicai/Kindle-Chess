@@ -1062,7 +1062,7 @@ static void saveAppSettings() {
     f << "show_move_list=" << (app.showMoveList ? 1 : 0) << "\n";
     f << "engine_mode=" << (app.engineMode == EngineMode::Off ? 0 : (app.engineMode == EngineMode::Black ? 1 : 2)) << "\n";
     f << "engine_elo=" << app.engineElos[app.engineEloIndex] << "\n";
-    f << "flipped=0\n";
+    f << "flipped=" << (app.flipped ? 1 : 0) << "\n";
     f << "use_piece_images=" << (app.usePieceImages ? 1 : 0) << "\n";
     f << "confirm_moves=" << (app.confirmMoves ? 1 : 0) << "\n";
     f << "dark_piece_mode=" << app.darkPieceMode << "\n";
@@ -1088,7 +1088,7 @@ static void loadAppSettings() {
                 if (std::abs(app.engineElos[i] - n) < std::abs(app.engineElos[best] - n)) best = i;
             app.engineEloIndex = best;
         }
-        else if (key == "flipped") app.flipped = false;
+        else if (key == "flipped") app.flipped = n != 0;
         else if (key == "use_piece_images") app.usePieceImages = n != 0;
         else if (key == "confirm_moves") app.confirmMoves = n != 0;
         else if (key == "dark_piece_mode") app.darkPieceMode = clampInt(n, 0, 2);
@@ -1683,9 +1683,13 @@ static void drawSettingsMain(cairo_t* cr, const Layout& L, double ox, double oy,
     else engineLabel += "White";
 
     RectButton engine{engineLabel, left, y, bw * 2 + 12, bh}; y += gap;
-    RectButton eloDown{"Elo -250", left, y, bw, bh};
-    RectButton eloUp{"Elo +250", right, y, bw, bh}; y += gap;
-    RectButton eloValue{"Elo: " + std::to_string(currentEngineElo()), left, y, bw * 2 + 12, bh}; y += gap;
+    int fullW = bw * 2 + 12;
+    int sideW = std::max(110, std::min(fullW * 22 / 100, 220));
+    int midW = fullW - sideW * 2 - 16;
+    RectButton eloDown{"-250", left, y, sideW, bh};
+    RectButton eloValue{"Elo: " + std::to_string(currentEngineElo()), left + sideW + 8, y, midW, bh};
+    RectButton eloUp{"+250", left + fullW - sideW, y, sideW, bh}; y += gap;
+    RectButton orientation{std::string("Orientation: ") + (app.flipped ? "Black" : "White"), left, y, fullW, bh}; y += gap;
 
     RectButton hint{"Hint", left, y, bw, bh};
     RectButton restart{"Restart Engine", right, y, bw, bh}; y += gap;
@@ -1703,7 +1707,7 @@ static void drawSettingsMain(cairo_t* cr, const Layout& L, double ox, double oy,
     RectButton darkFix{std::string("Dark Piece Fix: ") + darkPieceModeLabel(), left, y, bw * 2 + 12, bh}; y += gap;
     RectButton close{"Close Settings", left, y, bw * 2 + 12, bh};
 
-    app.overlayButtons = {engine, eloDown, eloUp, eloValue, hint, restart, exportBtn, confirm, saves, review,
+    app.overlayButtons = {engine, eloDown, eloValue, eloUp, orientation, hint, restart, exportBtn, confirm, saves, review,
                           coords, moves, smaller, bigger, pieceMode, reloadPieces, darkFix, close};
     double fs = sfs;
     for (const auto& b : app.overlayButtons) drawButton(cr, b, fs);
@@ -2217,15 +2221,16 @@ static bool handleSettingsTap(int x, int y) {
 
         if (b.label.rfind("Coordinates", 0) == 0) app.showCoordinates = !app.showCoordinates;
         else if (b.label.rfind("Move List", 0) == 0) app.showMoveList = !app.showMoveList;
+        else if (b.label.rfind("Orientation", 0) == 0) app.flipped = !app.flipped;
         else if (b.label == "Font -") app.uiFontSize = clampInt(app.uiFontSize - 2, 14, 50);
         else if (b.label == "Font +") app.uiFontSize = clampInt(app.uiFontSize + 2, 14, 50);
         else if (b.label.rfind("Engine", 0) == 0 && !locked) {
             if (app.engineMode == EngineMode::Off) app.engineMode = EngineMode::Black;
             else if (app.engineMode == EngineMode::Black) app.engineMode = EngineMode::White;
             else app.engineMode = EngineMode::Off;
-        } else if (b.label == "Elo -250" && !locked) {
+        } else if (b.label == "-250" && !locked) {
             app.engineEloIndex = clampInt(app.engineEloIndex - 1, 0, (int)app.engineElos.size() - 1);
-        } else if (b.label == "Elo +250" && !locked) {
+        } else if (b.label == "+250" && !locked) {
             app.engineEloIndex = clampInt(app.engineEloIndex + 1, 0, (int)app.engineElos.size() - 1);
         } else if (b.label == "Hint") {
             app.showSettings = false;
@@ -2367,7 +2372,6 @@ int main(int argc, char** argv) {
 
     gtk_init(&argc, &argv);
     loadAppSettings();
-    app.flipped = false;
     app.game.load();
     updateGameOverPopup();
 
