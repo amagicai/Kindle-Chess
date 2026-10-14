@@ -106,6 +106,7 @@ public:
         for (int i = 0; i < 64; ++i) pos.b[i] = start[i];
         history.clear();
         message = "New game. White to move.";
+        invalidateGameOverCache();
     }
 
     const Position& state() const { return pos; }
@@ -206,6 +207,7 @@ public:
         pos = history.back();
         history.pop_back();
         updateStatus();
+        invalidateGameOverCache();
         return true;
     }
 
@@ -372,12 +374,11 @@ public:
     }
 
     std::string gameOverMessage() const {
-        if (isCheckmate()) return std::string(pos.white_to_move ? "Black" : "White") + " wins by checkmate.";
-        if (isStalemate()) return "Draw by stalemate.";
-        if (isInsufficientMaterial()) return "Draw by insufficient material.";
-        if (isFiftyMoveDraw()) return "Draw by fifty-move rule.";
-        if (isThreefoldRepetition()) return "Draw by threefold repetition.";
-        return "";
+        if (!gameOverCached) {
+            gameOverMsg = computeGameOverMessage();
+            gameOverCached = true;
+        }
+        return gameOverMsg;
     }
 
     std::string resultString() const {
@@ -390,6 +391,19 @@ private:
     Position pos;
     std::vector<Position> history;
     std::string message;
+    mutable bool gameOverCached = false;
+    mutable std::string gameOverMsg;
+
+    void invalidateGameOverCache() { gameOverCached = false; }
+
+    std::string computeGameOverMessage() const {
+        if (isCheckmate()) return std::string(pos.white_to_move ? "Black" : "White") + " wins by checkmate.";
+        if (isStalemate()) return "Draw by stalemate.";
+        if (isInsufficientMaterial()) return "Draw by insufficient material.";
+        if (isFiftyMoveDraw()) return "Draw by fifty-move rule.";
+        if (isThreefoldRepetition()) return "Draw by threefold repetition.";
+        return "";
+    }
 
     static int clampIntLocal(int v, int lo, int hi) { return std::max(lo, std::min(hi, v)); }
 
@@ -664,6 +678,7 @@ private:
     }
 
     void applyNoHistory(const Move& m) {
+        invalidateGameOverCache();
         char moving = pos.b[m.from];
         char captured = pos.b[m.to];
         bool white = is_white_piece(moving);
