@@ -1808,9 +1808,9 @@ static void drawGameOver(cairo_t* cr, const Layout& L) {
     drawTextCentered(cr, app.gameOverText.empty() ? "Game Over" : app.gameOverText, ox + 20, oy + 28, ow - 40, 76, app.uiFontSize + 5, true);
     int bw = std::max(230, std::min(320, (int)(ow - 80)));
     int bh = std::max(62, std::min(78, app.uiFontSize + 24));
-    RectButton yes{"New Game", (int)(ox + ow/2 - bw/2), (int)(oy + oh - bh - 24), bw, bh};
-    app.overlayButtons.push_back(yes);
-    drawButton(cr, yes, std::max(17, app.uiFontSize - 1));
+    RectButton close{"Close", (int)(ox + ow/2 - bw/2), (int)(oy + oh - bh - 24), bw, bh};
+    app.overlayButtons.push_back(close);
+    drawButton(cr, close, std::max(17, app.uiFontSize - 1));
 }
 
 static gboolean on_draw(GtkWidget* widget, GdkEventExpose*, gpointer) {
@@ -2166,7 +2166,10 @@ static bool handleGameOverTap(int x, int y) {
     if (!app.showGameOver) return false;
     for (const auto& b : app.overlayButtons) {
         if (!pointInButton(b, x, y)) continue;
-        if (b.label == "New Game") startNewGameNow();
+        if (b.label == "Close") {
+            app.uiStatus = app.gameOverText;
+            app.showGameOver = false;
+        }
         gtk_widget_queue_draw(app.area);
         return true;
     }
