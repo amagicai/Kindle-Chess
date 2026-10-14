@@ -1127,10 +1127,6 @@ static int engineMovetimeForElo(int elo) {
     return clampInt(elo, 250, 3000);
 }
 
-static bool gameSetupLocked() {
-    return !app.game.uciMoves().empty();
-}
-
 static bool updateGameOverPopup() {
     std::string msg = app.game.gameOverMessage();
     if (!msg.empty()) {
@@ -1664,10 +1660,9 @@ static void drawConfirmNew(cairo_t* cr, const Layout& L) {
 }
 
 static void drawSettingsMain(cairo_t* cr, const Layout& L, double ox, double oy, double ow, double oh) {
-    bool locked = gameSetupLocked();
     int sfs = settingsFontSize();
     drawTextCentered(cr, "Settings", ox, oy + 12, ow, std::max(56, sfs + 14), sfs + 6, true);
-    drawTextCentered(cr, locked ? "Engine side and Elo are locked after the first move." : "Set engine side and Elo before making the first move.",
+    drawTextCentered(cr, "Set engine side and Elo at any time.",
                      ox + 22, oy + 70, ow - 44, std::max(38, sfs - 8), std::max(22, sfs - 18), false);
 
     int bw = (int)((ow - 96) / 2.0);
@@ -1677,7 +1672,7 @@ static void drawSettingsMain(cairo_t* cr, const Layout& L, double ox, double oy,
     int y = (int)(oy + 118);
     int gap = bh + 10;
 
-    std::string engineLabel = std::string(locked ? "Engine Locked: " : "Engine: ");
+    std::string engineLabel = "Engine: ";
     if (app.engineMode == EngineMode::Off) engineLabel += "Off";
     else if (app.engineMode == EngineMode::Black) engineLabel += "Black";
     else engineLabel += "White";
@@ -2199,7 +2194,6 @@ static bool handleSettingsTap(int x, int y) {
     if (!app.showSettings) return false;
     for (const auto& b : app.overlayButtons) {
         if (!pointInButton(b, x, y)) continue;
-        bool locked = gameSetupLocked();
 
         if (app.settingsPage == 1) {
             if (b.label == "Back") app.settingsPage = 0;
@@ -2209,7 +2203,10 @@ static bool handleSettingsTap(int x, int y) {
                 if (n >= 1 && n <= 5) saveSlot(n);
             } else if (b.label.rfind("Load ", 0) == 0) {
                 int n = std::atoi(b.label.substr(5).c_str());
-                if (n >= 1 && n <= 5) loadSlot(n);
+                if (n >= 1 && n <= 5) {
+                    loadSlot(n);
+                    maybeEngineMove();
+                }
             } else if (b.label.rfind("Del ", 0) == 0) {
                 int n = std::atoi(b.label.substr(4).c_str());
                 if (n >= 1 && n <= 5) deleteSlot(n);
@@ -2224,13 +2221,14 @@ static bool handleSettingsTap(int x, int y) {
         else if (b.label.rfind("Orientation", 0) == 0) app.flipped = !app.flipped;
         else if (b.label == "Font -") app.uiFontSize = clampInt(app.uiFontSize - 2, 14, 50);
         else if (b.label == "Font +") app.uiFontSize = clampInt(app.uiFontSize + 2, 14, 50);
-        else if (b.label.rfind("Engine", 0) == 0 && !locked) {
+        else if (b.label.rfind("Engine", 0) == 0) {
             if (app.engineMode == EngineMode::Off) app.engineMode = EngineMode::Black;
             else if (app.engineMode == EngineMode::Black) app.engineMode = EngineMode::White;
             else app.engineMode = EngineMode::Off;
-        } else if (b.label == "-250" && !locked) {
+            maybeEngineMove();
+        } else if (b.label == "-250") {
             app.engineEloIndex = clampInt(app.engineEloIndex - 1, 0, (int)app.engineElos.size() - 1);
-        } else if (b.label == "+250" && !locked) {
+        } else if (b.label == "+250") {
             app.engineEloIndex = clampInt(app.engineEloIndex + 1, 0, (int)app.engineElos.size() - 1);
         } else if (b.label == "Hint") {
             app.showSettings = false;
@@ -2390,6 +2388,7 @@ int main(int argc, char** argv) {
     g_signal_connect(G_OBJECT(app.window), "destroy", G_CALLBACK(gtk_main_quit), nullptr);
 
     gtk_widget_show_all(app.window);
+    maybeEngineMove();
     gtk_main();
     return 0;
 }
