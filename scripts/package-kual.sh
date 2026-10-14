@@ -10,7 +10,7 @@ cp "$ROOT/extension/kindlechess/config.xml" "$EXT/config.xml"
 cp "$ROOT/extension/kindlechess/menu.json" "$EXT/menu.json"
 cp "$ROOT/extension/kindlechess/bin/start.sh" "$EXT/bin/start.sh"
 cp "$BIN" "$EXT/bin/kindlechess"
-if [ -d "$ROOT/extension/kindlechess/pieces" ]; then cp -R "$ROOT/extension/kindlechess/pieces/." "$EXT/pieces/"; fi
+if [ -d "$ROOT/Pieces" ]; then cp "$ROOT/Pieces"/*.png "$EXT/pieces/default/"; fi
 chmod +x "$EXT/bin/start.sh" "$EXT/bin/kindlechess"
 cat > "$EXT/README-INSTALL.txt" <<'TXT'
 Copy this entire kindlechess folder to:
