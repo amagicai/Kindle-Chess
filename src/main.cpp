@@ -107,6 +107,7 @@ public:
         history.clear();
         message = "New game. White to move.";
         invalidateGameOverCache();
+        invalidateMoveCaches();
     }
 
     const Position& state() const { return pos; }
@@ -184,6 +185,7 @@ public:
             if (m.promotion) uci.push_back(m.promotion);
             applyNoHistory(m);
             pos.uci_moves.push_back(uci);
+            invalidateMoveCaches();
             updateStatus();
             return true;
         }
@@ -206,6 +208,7 @@ public:
         }
         pos = history.back();
         history.pop_back();
+        invalidateMoveCaches();
         updateStatus();
         invalidateGameOverCache();
         return true;
@@ -256,12 +259,20 @@ public:
         return any;
     }
 
-    Position positionAfterPly(int ply) const {
-        ChessGame tmp;
-        tmp.reset();
-        int n = clampIntLocal(ply, 0, (int)pos.uci_moves.size());
-        for (int i = 0; i < n; ++i) tmp.makeUciMove(pos.uci_moves[i]);
-        return tmp.pos;
+    const Position& positionAfterPly(int ply) const {
+        if (!reviewPositionsCached) {
+            reviewPositions.clear();
+            ChessGame tmp;
+            tmp.reset();
+            reviewPositions.push_back(tmp.pos);
+            for (const auto& u : pos.uci_moves) {
+                if (!tmp.makeUciMove(u)) break;
+                reviewPositions.push_back(tmp.pos);
+            }
+            reviewPositionsCached = true;
+        }
+        int n = clampIntLocal(ply, 0, (int)reviewPositions.size() - 1);
+        return reviewPositions[n];
     }
 
     std::string sanForUci(const std::string& uci) const {
@@ -278,47 +289,20 @@ public:
         return uci;
     }
 
-    std::vector<std::string> sanMoveList() const {
-        std::vector<std::string> out;
-        ChessGame tmp;
-        tmp.reset();
-        for (const auto& u : pos.uci_moves) {
-            out.push_back(tmp.sanForUci(u));
-            tmp.makeUciMove(u);
+    const std::vector<std::string>& sanMoveList() const {
+        if (!sanListCached) {
+            sanListCache = computeSanMoveList();
+            sanListCached = true;
         }
-        return out;
+        return sanListCache;
     }
 
-    std::pair<std::vector<char>, std::vector<char>> capturedPieces() const {
-        std::vector<char> byWhite, byBlack;
-        ChessGame tmp;
-        tmp.reset();
-        for (const auto& u : pos.uci_moves) {
-            if (u.size() < 4) break;
-            int from = parse_square(u.substr(0,2));
-            int to = parse_square(u.substr(2,2));
-            char promo = u.size() >= 5 ? (char)std::tolower((unsigned char)u[4]) : 0;
-            bool found = false;
-            for (const auto& m : tmp.legalMoves()) {
-                if (m.from != from || m.to != to) continue;
-                if (m.promotion && promo && m.promotion != promo) continue;
-                if (m.promotion && !promo) continue;
-                char moving = tmp.pos.b[m.from];
-                char captured = tmp.capturedPieceForMove(m);
-                if (captured != '.') {
-                    if (is_white_piece(moving)) byWhite.push_back(captured);
-                    else byBlack.push_back(captured);
-                }
-                tmp.applyNoHistory(m);
-                tmp.pos.uci_moves.push_back(u);
-                found = true;
-                break;
-            }
-            if (!found) break;
+    const std::pair<std::vector<char>, std::vector<char>>& capturedPieces() const {
+        if (!capturedCached) {
+            capturedCache = computeCapturedPieces();
+            capturedCached = true;
         }
-        sortCaptured(byWhite);
-        sortCaptured(byBlack);
-        return {byWhite, byBlack};
+        return capturedCache;
     }
 
     bool isInsufficientMaterial() const {
@@ -393,8 +377,20 @@ private:
     std::string message;
     mutable bool gameOverCached = false;
     mutable std::string gameOverMsg;
+    mutable bool sanListCached = false;
+    mutable std::vector<std::string> sanListCache;
+    mutable bool capturedCached = false;
+    mutable std::pair<std::vector<char>, std::vector<char>> capturedCache;
+    mutable bool reviewPositionsCached = false;
+    mutable std::vector<Position> reviewPositions;
 
     void invalidateGameOverCache() { gameOverCached = false; }
+
+    void invalidateMoveCaches() {
+        sanListCached = false;
+        capturedCached = false;
+        reviewPositionsCached = false;
+    }
 
     std::string computeGameOverMessage() const {
         if (isCheckmate()) return std::string(pos.white_to_move ? "Black" : "White") + " wins by checkmate.";
@@ -501,6 +497,49 @@ private:
         bool inCheck = k >= 0 && after.isSquareAttacked(k, !after.pos.white_to_move);
         if (inCheck) san += after.legalMoves().empty() ? "#" : "+";
         return san;
+    }
+
+    std::vector<std::string> computeSanMoveList() const {
+        std::vector<std::string> out;
+        ChessGame tmp;
+        tmp.reset();
+        for (const auto& u : pos.uci_moves) {
+            out.push_back(tmp.sanForUci(u));
+            tmp.makeUciMove(u);
+        }
+        return out;
+    }
+
+    std::pair<std::vector<char>, std::vector<char>> computeCapturedPieces() const {
+        std::vector<char> byWhite, byBlack;
+        ChessGame tmp;
+        tmp.reset();
+        for (const auto& u : pos.uci_moves) {
+            if (u.size() < 4) break;
+            int from = parse_square(u.substr(0,2));
+            int to = parse_square(u.substr(2,2));
+            char promo = u.size() >= 5 ? (char)std::tolower((unsigned char)u[4]) : 0;
+            bool found = false;
+            for (const auto& m : tmp.legalMoves()) {
+                if (m.from != from || m.to != to) continue;
+                if (m.promotion && promo && m.promotion != promo) continue;
+                if (m.promotion && !promo) continue;
+                char moving = tmp.pos.b[m.from];
+                char captured = tmp.capturedPieceForMove(m);
+                if (captured != '.') {
+                    if (is_white_piece(moving)) byWhite.push_back(captured);
+                    else byBlack.push_back(captured);
+                }
+                tmp.applyNoHistory(m);
+                tmp.pos.uci_moves.push_back(u);
+                found = true;
+                break;
+            }
+            if (!found) break;
+        }
+        sortCaptured(byWhite);
+        sortCaptured(byBlack);
+        return {byWhite, byBlack};
     }
 
 
@@ -955,6 +994,7 @@ struct App {
 
     bool showCoordinates = true;
     bool showMoveList = true;
+    bool sanNotation = false;
     int uiFontSize = 40;
     bool usePieceImages = true;
     bool pieceImagesLoaded = false;
@@ -1060,6 +1100,7 @@ static void saveAppSettings() {
     f << "ui_font_size=" << app.uiFontSize << "\n";
     f << "show_coordinates=" << (app.showCoordinates ? 1 : 0) << "\n";
     f << "show_move_list=" << (app.showMoveList ? 1 : 0) << "\n";
+    f << "move_notation=" << (app.sanNotation ? 1 : 0) << "\n";
     f << "engine_mode=" << (app.engineMode == EngineMode::Off ? 0 : (app.engineMode == EngineMode::Black ? 1 : 2)) << "\n";
     f << "engine_elo=" << app.engineElos[app.engineEloIndex] << "\n";
     f << "flipped=" << (app.flipped ? 1 : 0) << "\n";
@@ -1081,6 +1122,7 @@ static void loadAppSettings() {
         if (key == "ui_font_size") app.uiFontSize = clampInt(n, 14, 50);
         else if (key == "show_coordinates") app.showCoordinates = n != 0;
         else if (key == "show_move_list") app.showMoveList = n != 0;
+        else if (key == "move_notation") app.sanNotation = n != 0;
         else if (key == "engine_mode") app.engineMode = (n == 1 ? EngineMode::Black : (n == 2 ? EngineMode::White : EngineMode::Off));
         else if (key == "engine_elo") {
             int best = 0;
@@ -1157,7 +1199,7 @@ static std::string exportPGN() {
     f << "[Black \"Black\"]\n";
     f << "[Result \"" << result << "\"]\n\n";
 
-    auto sans = app.game.sanMoveList();
+    const auto& sans = app.game.sanMoveList();
     int chars = 0;
     for (size_t i = 0; i < sans.size(); ++i) {
         std::ostringstream token;
@@ -1173,7 +1215,12 @@ static std::string exportPGN() {
     return "PGN exported: " + file;
 }
 
-static std::string slotSummary(int n) {
+static std::array<std::string, 6> slotSummaryCache;
+static bool slotSummaryCacheValid = false;
+
+static void invalidateSlotSummaries() { slotSummaryCacheValid = false; }
+
+static std::string computeSlotSummary(int n) {
     std::ifstream f(slot_path(n).c_str());
     if (!f) return "Slot " + std::to_string(n) + ": Empty";
     ChessGame tmp;
@@ -1185,9 +1232,18 @@ static std::string slotSummary(int n) {
     return os.str();
 }
 
+static const std::string& slotSummary(int n) {
+    if (!slotSummaryCacheValid) {
+        for (int i = 1; i <= 5; ++i) slotSummaryCache[i] = computeSlotSummary(i);
+        slotSummaryCacheValid = true;
+    }
+    return slotSummaryCache[n];
+}
+
 static void saveSlot(int n) {
     ensure_slots_dir();
     app.game.saveTo(slot_path(n));
+    invalidateSlotSummaries();
     app.uiStatus = "Saved to slot " + std::to_string(n) + ".";
 }
 
@@ -1212,6 +1268,7 @@ static bool loadSlot(int n) {
 
 static void deleteSlot(int n) {
     unlink(slot_path(n).c_str());
+    invalidateSlotSummaries();
     app.uiStatus = "Deleted slot " + std::to_string(n) + ".";
 }
 
@@ -1465,11 +1522,22 @@ static Layout computeLayout(GtkWidget* widget) {
     return L;
 }
 
+static bool sanDisplayEnabled() { return app.showMoveList && app.sanNotation; }
+
+static std::string moveListLabel() {
+    if (!app.showMoveList) return "Move List: Off";
+    return std::string("Move List: ") + (app.sanNotation ? "SAN" : "UCI");
+}
+
 static std::string moveSummaryLine() {
     const auto& moves = app.game.uciMoves();
     std::ostringstream os;
     os << "Move " << (moves.size() / 2 + 1);
-    if (!moves.empty()) os << "  Last: " << moves.back();
+    if (!moves.empty()) {
+        os << "  Last: ";
+        if (sanDisplayEnabled()) os << app.game.sanMoveList().back();
+        else os << moves.back();
+    }
     os << "  " << engineModeLabel();
     if (app.engineMode != EngineMode::Off) os << "  Elo: " << currentEngineElo();
     return os.str();
@@ -1487,7 +1555,7 @@ static void lastMoveSquares(int& from, int& to) {
 
 static std::vector<std::string> moveHistoryLines(int maxLines) {
     std::vector<std::string> lines;
-    const auto& m = app.game.uciMoves();
+    const auto& m = sanDisplayEnabled() ? app.game.sanMoveList() : app.game.uciMoves();
     for (size_t i = 0; i < m.size(); i += 2) {
         std::ostringstream os;
         os << (i / 2 + 1) << ". " << m[i];
@@ -1564,7 +1632,7 @@ static void drawCapturedBox(cairo_t* cr, int x, int y, int w, int h) {
 }
 
 static void drawCapturedPieces(cairo_t* cr, const Layout& L) {
-    auto caps = app.game.capturedPieces();
+    const auto& caps = app.game.capturedPieces();
     int baseCell = std::max(32, std::min(58, app.uiFontSize + 14));
     int fs = std::max(22, std::min(38, app.uiFontSize - 2));
     int maxPieces = std::max((int)caps.first.size(), (int)caps.second.size());
@@ -1694,7 +1762,7 @@ static void drawSettingsMain(cairo_t* cr, const Layout& L, double ox, double oy,
     RectButton review{"Review Game", right, y, bw, bh}; y += gap;
 
     RectButton coords{std::string("Coordinates: ") + (app.showCoordinates ? "On" : "Off"), left, y, bw, bh};
-    RectButton moves{std::string("Move List: ") + (app.showMoveList ? "On" : "Off"), right, y, bw, bh}; y += gap;
+    RectButton moves{moveListLabel(), right, y, bw, bh}; y += gap;
     RectButton smaller{"Font -", left, y, bw, bh};
     RectButton bigger{"Font +", right, y, bw, bh}; y += gap;
     RectButton pieceMode{std::string("Piece PNGs: ") + (app.usePieceImages ? "On" : "Off"), left, y, bw, bh};
@@ -1837,7 +1905,7 @@ static gboolean on_draw(GtkWidget* widget, GdkEventExpose*, gpointer) {
 
     drawToolbar(cr, W);
 
-    Position displayPos = app.reviewMode ? app.game.positionAfterPly(app.reviewPly) : app.game.state();
+    const Position& displayPos = app.reviewMode ? app.game.positionAfterPly(app.reviewPly) : app.game.state();
 
     std::vector<Move> selectedMoves;
     if (!app.reviewMode && app.selected >= 0) selectedMoves = app.game.legalMovesFrom(app.selected);
@@ -2222,7 +2290,11 @@ static bool handleSettingsTap(int x, int y) {
         }
 
         if (b.label.rfind("Coordinates", 0) == 0) app.showCoordinates = !app.showCoordinates;
-        else if (b.label.rfind("Move List", 0) == 0) app.showMoveList = !app.showMoveList;
+        else if (b.label.rfind("Move List", 0) == 0) {
+            if (!app.showMoveList) { app.showMoveList = true; app.sanNotation = false; }
+            else if (!app.sanNotation) app.sanNotation = true;
+            else { app.showMoveList = false; app.sanNotation = false; }
+        }
         else if (b.label.rfind("Orientation", 0) == 0) app.flipped = !app.flipped;
         else if (b.label == "Font -") app.uiFontSize = clampInt(app.uiFontSize - 2, 14, 50);
         else if (b.label == "Font +") app.uiFontSize = clampInt(app.uiFontSize + 2, 14, 50);
@@ -2247,6 +2319,7 @@ static bool handleSettingsTap(int x, int y) {
             app.confirmMoves = !app.confirmMoves;
         } else if (b.label == "Save / Load") {
             app.settingsPage = 1;
+            invalidateSlotSummaries();
         } else if (b.label == "Review Game") {
             app.reviewMode = true;
             app.reviewPly = (int)app.game.uciMoves().size();
