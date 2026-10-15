@@ -1498,10 +1498,10 @@ static Layout computeLayout(GtkWidget* widget) {
     int requestedPanelW = app.showMoveList ? std::max(160, app.uiFontSize * 8) : 0;
     L.hasPanel = app.showMoveList && L.W >= 850 && requestedPanelW + 360 < availableW;
 
-    // If there is no side panel, captured pieces live below the board.  Reserve
+    // Captured pieces live below the board and move list panel.  Reserve
     // explicit vertical space for them so large UI fonts do not cause that area
     // to be clipped away by the board/status region.
-    L.capturedH = L.hasPanel ? 0 : std::max(148, std::min(240, app.uiFontSize * 3 + 62));
+    L.capturedH = std::max(148, std::min(240, app.uiFontSize * 3 + 62));
 
     int availableH = L.H - L.topH - L.statusH - 2 * L.margin - L.capturedH;
     if (availableH < 240) availableH = L.H - L.topH - L.statusH - 2 * L.margin;
@@ -1636,36 +1636,29 @@ static void drawCapturedPieces(cairo_t* cr, const Layout& L) {
     int baseCell = std::max(32, std::min(58, app.uiFontSize + 14));
     int fs = std::max(22, std::min(38, app.uiFontSize - 2));
     int maxPieces = std::max((int)caps.first.size(), (int)caps.second.size());
-    if (L.hasPanel) {
-        int boxH = std::max(152, std::min(220, baseCell * 2 + fs + 42));
-        int y = L.panelY + L.panelH - boxH - 8;
-        if (y < L.panelY + 86) return;
-        int cell = fitCapturedCell(L.panelW - 24, baseCell, maxPieces);
-        int rowGap = 10;
-        drawCapturedBox(cr, L.panelX + 4, y, L.panelW - 8, boxH);
-        cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
-        drawTextCentered(cr, "Captured", L.panelX + 8, y + 8, L.panelW - 16, fs + 8, fs, true);
-        int rowY = y + fs + 24;
-        drawCapturedRow(cr, "White captured", caps.first, L.panelX + 14, rowY, L.panelW - 28, cell, fs);
-        drawCapturedRow(cr, "Black captured", caps.second, L.panelX + 14, rowY + cell + rowGap, L.panelW - 28, cell, fs);
-    } else {
-        int areaTop = L.boardY + L.board + 8;
-        int areaBottom = L.H - L.statusH - 8;
-        int available = areaBottom - areaTop;
-        if (available <= 70) return;
 
-        int rowGap = 10;
-        int cell = std::min(baseCell, std::max(22, (available - fs - rowGap - 32) / 2));
-        cell = fitCapturedCell(L.board - 24, cell, maxPieces);
-        int boxH = std::min(available, std::max(132, fs + cell * 2 + rowGap + 34));
-        int boxY = areaTop + std::max(0, (available - boxH) / 2);
+    int areaTop = L.boardY + L.board + 8;
+    int areaBottom = L.H - L.statusH - 8;
+    int available = areaBottom - areaTop;
+    if (available <= 70) return;
 
-        drawCapturedBox(cr, L.boardX, boxY, L.board, boxH);
-        cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
-        int y = boxY + fs + 12;
-        drawCapturedRow(cr, "White captured", caps.first, L.boardX + 12, y, L.board - 24, cell, fs);
-        drawCapturedRow(cr, "Black captured", caps.second, L.boardX + 12, y + cell + rowGap, L.board - 24, cell, fs);
-    }
+    // Sit below the board (and the move list panel when it is shown), spanning
+    // both so the block lines up with the bottom of the side panel.
+    int boxX = L.boardX;
+    int boxW = L.board;
+    if (L.hasPanel) boxW = (L.panelX + L.panelW) - L.boardX;
+
+    int rowGap = 10;
+    int cell = std::min(baseCell, std::max(22, (available - fs - rowGap - 32) / 2));
+    cell = fitCapturedCell(boxW - 24, cell, maxPieces);
+    int boxH = std::min(available, std::max(132, fs + cell * 2 + rowGap + 34));
+    int boxY = areaTop + std::max(0, (available - boxH) / 2);
+
+    drawCapturedBox(cr, boxX, boxY, boxW, boxH);
+    cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+    int y = boxY + fs + 12;
+    drawCapturedRow(cr, "White captured", caps.first, boxX + 12, y, boxW - 24, cell, fs);
+    drawCapturedRow(cr, "Black captured", caps.second, boxX + 12, y + cell + rowGap, boxW - 24, cell, fs);
 }
 
 static void drawMovePanel(cairo_t* cr, const Layout& L) {
@@ -1678,8 +1671,7 @@ static void drawMovePanel(cairo_t* cr, const Layout& L) {
     cairo_stroke(cr);
     drawTextCentered(cr, "Moves", L.panelX, L.panelY + 6, L.panelW, 30, std::max(16, std::min(26, app.uiFontSize - 2)), true);
     int lineH = std::max(20, std::min(34, app.uiFontSize + 4));
-    int capturedReserve = std::max(170, std::min(250, app.uiFontSize * 3 + 100));
-    int maxLines = std::max(1, (L.panelH - 48 - capturedReserve) / lineH);
+    int maxLines = std::max(1, (L.panelH - 48 - 16) / lineH);
     auto lines = moveHistoryLines(maxLines);
     int y = L.panelY + 48;
     for (const auto& line : lines) {
