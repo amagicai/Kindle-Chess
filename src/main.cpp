@@ -979,12 +979,6 @@ struct App {
     bool resigned = false;
     std::string resignedMessage;
 
-    bool confirmMoves = false;
-    bool showMoveConfirm = false;
-    int confirmFrom = -1;
-    int confirmTo = -1;
-    char confirmPromotion = 0;
-
     bool reviewMode = false;
     int reviewPly = 0;
     std::vector<RectButton> reviewButtons;
@@ -1105,7 +1099,6 @@ static void saveAppSettings() {
     f << "engine_elo=" << app.engineElos[app.engineEloIndex] << "\n";
     f << "flipped=" << (app.flipped ? 1 : 0) << "\n";
     f << "use_piece_images=" << (app.usePieceImages ? 1 : 0) << "\n";
-    f << "confirm_moves=" << (app.confirmMoves ? 1 : 0) << "\n";
     f << "dark_piece_mode=" << app.darkPieceMode << "\n";
 }
 
@@ -1132,7 +1125,6 @@ static void loadAppSettings() {
         }
         else if (key == "flipped") app.flipped = n != 0;
         else if (key == "use_piece_images") app.usePieceImages = n != 0;
-        else if (key == "confirm_moves") app.confirmMoves = n != 0;
         else if (key == "dark_piece_mode") app.darkPieceMode = clampInt(n, 0, 2);
     }
 }
@@ -1145,7 +1137,6 @@ static std::string engine_path() {
 
 static bool engineShouldMove() {
     if (app.reviewMode) return false;
-    if (app.showMoveConfirm) return false;
     if (app.resigned) return false;
     if (app.engineMode == EngineMode::Off) return false;
     if (app.game.whiteToMove() && app.engineMode == EngineMode::White) return true;
@@ -1176,7 +1167,6 @@ static bool updateGameOverPopup() {
         app.gameOverText = msg;
         app.selected = -1;
         app.pendingFrom = app.pendingTo = -1;
-        app.showMoveConfirm = false;
         return true;
     }
     app.showGameOver = false;
@@ -1257,7 +1247,6 @@ static bool loadSlot(int n) {
     app.game.save();
     app.selected = -1;
     app.pendingFrom = app.pendingTo = -1;
-    app.showMoveConfirm = false;
     app.hintFrom = app.hintTo = -1;
     app.reviewMode = false;
     app.reviewPly = 0;
@@ -1749,7 +1738,8 @@ static void drawSettingsMain(cairo_t* cr, const Layout& L, double ox, double oy,
     RectButton hint{"Hint", left, y, bw, bh};
     RectButton restart{"Restart Engine", right, y, bw, bh}; y += gap;
     RectButton exportBtn{"Export PGN", left, y, bw, bh};
-    RectButton confirm{std::string("Confirm Moves: ") + (app.confirmMoves ? "On" : "Off"), right, y, bw, bh}; y += gap;
+    // Right-hand slot on this row is intentionally left blank for a future setting.
+    y += gap;
     RectButton saves{"Save / Load", left, y, bw, bh};
     RectButton review{"Review Game", right, y, bw, bh}; y += gap;
 
@@ -1762,7 +1752,7 @@ static void drawSettingsMain(cairo_t* cr, const Layout& L, double ox, double oy,
     RectButton darkFix{std::string("Dark Piece Fix: ") + darkPieceModeLabel(), left, y, bw * 2 + 12, bh}; y += gap;
     RectButton close{"Close Settings", left, y, bw * 2 + 12, bh};
 
-    app.overlayButtons = {engine, eloDown, eloValue, eloUp, orientation, hint, restart, exportBtn, confirm, saves, review,
+    app.overlayButtons = {engine, eloDown, eloValue, eloUp, orientation, hint, restart, exportBtn, saves, review,
                           coords, moves, smaller, bigger, pieceMode, reloadPieces, darkFix, close};
     double fs = sfs;
     for (const auto& b : app.overlayButtons) drawButton(cr, b, fs);
@@ -1812,33 +1802,6 @@ static void drawSettings(cairo_t* cr, const Layout& L) {
 
     if (app.settingsPage == 1) drawSaveLoadSettings(cr, L, ox, oy, ow, oh);
     else drawSettingsMain(cr, L, ox, oy, ow, oh);
-}
-
-static void drawMoveConfirm(cairo_t* cr, const Layout& L) {
-    app.overlayButtons.clear();
-    double ow = std::min((double)L.W * 0.84, 620.0);
-    double oh = 230;
-    double ox = (L.W - ow) / 2.0;
-    double oy = (L.H - oh) / 2.0;
-    cairo_set_source_rgb(cr, 0.94, 0.94, 0.90);
-    cairo_rectangle(cr, ox, oy, ow, oh);
-    cairo_fill_preserve(cr);
-    cairo_set_source_rgb(cr, 0,0,0);
-    cairo_set_line_width(cr, 4.0);
-    cairo_stroke(cr);
-    std::string text = "Confirm move " + square_name(app.confirmFrom) + "-" + square_name(app.confirmTo);
-    if (app.confirmPromotion) {
-        text += "=";
-        text.push_back((char)std::toupper((unsigned char)app.confirmPromotion));
-    }
-    text += "?";
-    drawTextCentered(cr, text, ox + 20, oy + 24, ow - 40, 60, std::min(34, app.uiFontSize + 3), true);
-    int bw = 190, bh = 56;
-    RectButton cancel{"Cancel", (int)(ox + ow/2 - bw - 12), (int)(oy + oh - bh - 28), bw, bh};
-    RectButton yes{"Confirm", (int)(ox + ow/2 + 12), (int)(oy + oh - bh - 28), bw, bh};
-    app.overlayButtons.push_back(cancel); app.overlayButtons.push_back(yes);
-    drawButton(cr, cancel, std::max(16, std::min(24, app.uiFontSize - 2)));
-    drawButton(cr, yes, std::max(16, std::min(24, app.uiFontSize - 2)));
 }
 
 static void drawReviewControls(cairo_t* cr, const Layout& L) {
@@ -2052,7 +2015,6 @@ static gboolean on_draw(GtkWidget* widget, GdkEventExpose*, gpointer) {
 
     if (app.showGameOver) drawGameOver(cr, L);
     else if (app.confirmNew) drawConfirmNew(cr, L);
-    else if (app.showMoveConfirm) drawMoveConfirm(cr, L);
     else if (app.showSettings) drawSettings(cr, L);
 
     cairo_destroy(cr);
@@ -2096,28 +2058,12 @@ static int boardSquareFromXY(GtkWidget* widget, int x, int y) {
     return sq(br, bf);
 }
 
-static void clearPendingMoveConfirm() {
-    app.showMoveConfirm = false;
-    app.confirmFrom = app.confirmTo = -1;
-    app.confirmPromotion = 0;
-}
-
-static void beginMoveConfirm(int from, int to, char promo = 0) {
-    app.confirmFrom = from;
-    app.confirmTo = to;
-    app.confirmPromotion = promo;
-    app.showMoveConfirm = true;
-    app.selected = -1;
-    app.pendingFrom = app.pendingTo = -1;
-}
-
 static void commitHumanMove(int from, int to, char promo = 0) {
     app.resigned = false;
     app.resignedMessage.clear();
     app.showGameOver = false;
     app.gameOverText.clear();
     app.hintFrom = app.hintTo = -1;
-    clearPendingMoveConfirm();
 
     // Promotion used a separate pendingFrom/pendingTo overlay.  If these are
     // not cleared before committing the selected promotion, the promotion
@@ -2165,8 +2111,7 @@ static bool handlePromotionTap(GtkWidget* widget, int x, int y) {
         double bw = (ow - 52) / 4.0;
         double bh = oh - 76;
         if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
-            if (app.confirmMoves) beginMoveConfirm(app.pendingFrom, app.pendingTo, promos[i]);
-            else commitHumanMove(app.pendingFrom, app.pendingTo, promos[i]);
+            commitHumanMove(app.pendingFrom, app.pendingTo, promos[i]);
             gtk_widget_queue_draw(app.area);
             return true;
         }
@@ -2190,7 +2135,6 @@ static void startNewGameNow() {
     app.reviewMode = false;
     app.reviewPly = 0;
     app.hintFrom = app.hintTo = -1;
-    clearPendingMoveConfirm();
     app.game.reset();
     app.selected = -1;
     app.pendingFrom = app.pendingTo = -1;
@@ -2204,18 +2148,6 @@ static bool handleConfirmTap(int x, int y) {
         if (!pointInButton(b, x, y)) continue;
         if (b.label == "Cancel") app.confirmNew = false;
         else if (b.label == "New Game") startNewGameNow();
-        gtk_widget_queue_draw(app.area);
-        return true;
-    }
-    return true;
-}
-
-static bool handleMoveConfirmTap(int x, int y) {
-    if (!app.showMoveConfirm) return false;
-    for (const auto& b : app.overlayButtons) {
-        if (!pointInButton(b, x, y)) continue;
-        if (b.label == "Cancel") clearPendingMoveConfirm();
-        else if (b.label == "Confirm") commitHumanMove(app.confirmFrom, app.confirmTo, app.confirmPromotion);
         gtk_widget_queue_draw(app.area);
         return true;
     }
@@ -2307,8 +2239,6 @@ static bool handleSettingsTap(int x, int y) {
             app.uiStatus = "Engine restarted.";
         } else if (b.label == "Export PGN") {
             app.uiStatus = exportPGN();
-        } else if (b.label.rfind("Confirm Moves", 0) == 0) {
-            app.confirmMoves = !app.confirmMoves;
         } else if (b.label == "Save / Load") {
             app.settingsPage = 1;
             invalidateSlotSummaries();
@@ -2384,7 +2314,6 @@ static gboolean on_button(GtkWidget* widget, GdkEventButton* ev, gpointer) {
 
     if (handleGameOverTap(x, y)) return TRUE;
     if (handleConfirmTap(x, y)) return TRUE;
-    if (handleMoveConfirmTap(x, y)) return TRUE;
     if (handleSettingsTap(x, y)) return TRUE;
     if (handlePromotionTap(widget, x, y)) return TRUE;
     if (handleReviewTap(x, y)) return TRUE;
@@ -2416,7 +2345,6 @@ static gboolean on_button(GtkWidget* widget, GdkEventButton* ev, gpointer) {
                 bool legalDest = false;
                 for (const auto& m : app.game.legalMovesFrom(app.selected)) if (m.to == s && !m.promotion) { legalDest = true; break; }
                 if (!legalDest) app.uiStatus = "Illegal move.";
-                else if (app.confirmMoves) beginMoveConfirm(app.selected, s, 0);
                 else commitHumanMove(app.selected, s, 0);
             }
         }
